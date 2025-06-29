@@ -6,9 +6,11 @@
 
 #include "MainWindow.h"
 #include "Source/Cache/EXMemoryCache.h"
+#include "Source/ImageLoader/EXImageLoader.h"
+#include "Source/ImageLoader/EXImageProcessor.h"
 
 #include <QApplication>
-
+#include <QLabel>
 #include <iostream>
 #include <memory>
 #include <chrono>
@@ -145,14 +147,60 @@ void testSharedPtrCache() {
     std::cout << "外部引用销毁后，对象自动释放\n";
 }
 
+void testImageLoader()
+{
+    QLabel* label = new QLabel();
+    label->setFixedWidth(300);
+    label->setFixedHeight(200);
+    label->show();
+
+    // 设置全局处理链
+    EXImageProcessingChain globalChain;
+    globalChain.addStep(QSharedPointer<EXImageProcessing>(new EXRoundedCornerImageProcessor(10)));
+    globalChain.addStep(QSharedPointer<EXImageProcessing>(new EXSepiaImageProcessor()));
+    EXImageLoader::globalInstance()->setGlobalProcessingChain(globalChain);
+
+    // 设置并发配置
+    EXImageLoader::globalInstance()->config()->setMaxConcurrent(12);
+    EXImageLoader::globalInstance()->config()->setQueueCapacity(200);
+
+    // 加载图片
+    EXImageLoader::globalInstance()->loadImage(
+        QUrl("https://pic.rmb.bdstatic.com/bjh/other/148cbc3884a23b4c72b96194ba9066ee.png?for=bg"),
+        [label](const QPixmap& pixmap) {
+            label->setPixmap(pixmap);
+        },
+        ImageLoader::Priority::High,
+        QSize(200, 200) // 缩略图尺寸
+        );
+
+    // 带单次处理链的加载
+    EXImageProcessingChain requestChain;
+    requestChain.addStep(QSharedPointer<EXImageProcessing>(new EXGrayscaleImageProcessor()));
+
+    // EXImageLoader::globalInstance()->loadImage(
+    //     QUrl("https://example.com/another.jpg"),
+    //     [label](const QPixmap& pixmap) {
+    //         label->setPixmap(pixmap);
+    //     },
+    //     ImageLoader::Priority::Medium,
+    //     QSize(),
+    //     requestChain
+    //     );
+
+    // 监控并发状态
+    label->connect(EXImageLoader::globalInstance(), &EXImageLoader::concurrentCountChanged,
+            [](int count) {
+                qDebug() << "当前并发任务数:" << count;
+            });
+}
+
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    MainWindow w;
-    w.show();
-
-    testValueCache();
-    testSharedPtrCache();
+    testImageLoader();
+    // testValueCache();
+    // testSharedPtrCache();
 
     return a.exec();
 }
